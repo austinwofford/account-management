@@ -37,10 +37,11 @@ func WriteErrorResponse(w http.ResponseWriter, r *http.Request, httpErr ErrorRes
 	httpErr.Status = http.StatusText(httpErr.StatusCode)
 	httpErr.RequestID = fmt.Sprint(r.Context().Value(middleware.RequestIDKey))
 
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpErr.StatusCode)
+
 	if err := json.NewEncoder(w).Encode(httpErr); err != nil {
 		ctx := r.Context()
 		slog.ErrorContext(ctx, "failed to encode JSON error response", "error", err.Error())
 	}
-
-	w.WriteHeader(httpErr.StatusCode)
 }

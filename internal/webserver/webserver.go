@@ -7,19 +7,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/austinwofford/account-management/internal/config"
 	"github.com/austinwofford/account-management/internal/database"
+	"github.com/austinwofford/account-management/internal/service/auth"
 	"github.com/austinwofford/account-management/internal/webserver/accounts"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 )
-
-type Config struct {
-	Address      string
-	CORSEnabled  bool
-	DebugEnabled bool
-	PostgresURL  string
-}
 
 func NewHTTPServer(addr string, h http.Handler) *http.Server {
 	return &http.Server{
@@ -31,7 +26,7 @@ func NewHTTPServer(addr string, h http.Handler) *http.Server {
 	}
 }
 
-func NewRouter(cfg Config, logger *slog.Logger) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -68,6 +63,11 @@ func NewRouter(cfg Config, logger *slog.Logger) http.Handler {
 
 	r.Mount("/v1/accounts", accounts.NewHandler(accounts.HandlerDeps{
 		DB: db,
+		AuthClient: auth.NewClient(auth.Config{
+			JWTSecretKey:            cfg.JWTSecretKey,
+			AccessTokenTTLMinutes:   cfg.AccessTokenTTLMinutes,
+			RefresnhTokenTTLMinutes: cfg.RefreshTokenTTLMinutes,
+		}),
 	}))
 
 	return r

@@ -9,29 +9,30 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/austinwofford/account-management/internal/config"
 	"github.com/austinwofford/account-management/internal/webserver"
 )
 
 func main() {
 	// TODO: set logger default to log request IDs with every log output.
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	//logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	cfg := webserver.Config{
-		Address:     ":8080",
-		CORSEnabled: true,
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("fatal error loading config", "error", err)
+		os.Exit(1)
 	}
 
-	h := webserver.NewRouter(cfg, logger)
-	srv := webserver.NewHTTPServer(cfg.Address, h)
+	h := webserver.NewRouter(*cfg, logger)
+	srv := webserver.NewHTTPServer(cfg.HTTPAddress, h)
 
 	// start the webserver in a goroutine
 	errCh := make(chan error, 1)
 
 	go func() {
-		logger.Info("starting webserver", "addr", cfg.Address)
-		// TODO: serve TLS?
+		logger.Info("starting webserver", "addr", cfg.HTTPAddress)
+		// TODO: serve TLS
 		errCh <- srv.ListenAndServe()
 	}()
 
