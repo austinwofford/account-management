@@ -32,7 +32,6 @@ func main() {
 
 	go func() {
 		logger.Info("starting webserver", "addr", cfg.HTTPAddress)
-		// TODO: serve TLS
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -43,6 +42,7 @@ func main() {
 	case err := <-errCh:
 		if err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "err", err)
+			os.Exit(1)
 		}
 	}
 

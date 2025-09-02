@@ -31,4 +31,9 @@ go.work.sum
 # .idea/
 .vscode/
 
+# debug file
 *debug_bin*
+
+# ssl stuff
+*.crt
+*.key

@@ -9,6 +9,42 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  account-management:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PSQL_URL: postgres://postgres:password@postgres:5432/account_management?sslmode=disable
+      JWT_SECRET_KEY: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+      HTTP_ADDRESS: ":8080"
+    depends_on:
+      - postgres
+    networks:
+      - app-network
+    # Don't expose ports - only accessible via Caddy
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - account-management
+    networks:
+      - app-network
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  app-network:
+    driver: bridge
