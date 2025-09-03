@@ -34,6 +34,10 @@ fmt: ## Format code
 vet: ## Run go vet
 	go vet ./...
 
+# All quality checks
+check: fmt vet lint test ## Run all code quality checks
+
+# migrations
 migrate-up:
 	migrate -path migrations -database "postgres://postgres:password@localhost:5432/account_management?sslmode=disable" up
 
@@ -42,6 +46,3 @@ migrate-down:
 
 migrate-create: ## Create a new migration (usage: make migrate-create name=migration_name)
 	migrate create -ext sql -dir migrations $(name)
-
-# All quality checks
-check: fmt vet lint test ## Run all code quality checks

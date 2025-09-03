@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/austinwofford/account-management/docs"
 	"github.com/austinwofford/account-management/internal/config"
 	"github.com/austinwofford/account-management/internal/database"
 	"github.com/austinwofford/account-management/internal/service/auth"
@@ -52,12 +53,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// docs
+	r.Handle("/docs/*", http.StripPrefix("/docs/", docs.Handler))
+
 	r.Mount("/v1/accounts", accounts.NewHandler(accounts.HandlerDeps{
 		DB: db,
 		AuthClient: auth.NewClient(auth.Config{
-			JWTSecretKey:            cfg.JWTSecretKey,
-			AccessTokenTTLMinutes:   cfg.AccessTokenTTLMinutes,
-			RefresnhTokenTTLMinutes: cfg.RefreshTokenTTLMinutes,
+			JWTSecretKey:           cfg.JWTSecretKey,
+			AccessTokenTTLMinutes:  cfg.AccessTokenTTLMinutes,
+			RefreshTokenTTLMinutes: cfg.RefreshTokenTTLMinutes,
 		}),
 	}))
 

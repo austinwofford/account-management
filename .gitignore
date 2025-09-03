@@ -34,6 +34,9 @@ go.work.sum
 # debug file
 *debug_bin*
 
+# mac stuff
+.DS_Store
+
 # ssl stuff
 *.crt
 *.key

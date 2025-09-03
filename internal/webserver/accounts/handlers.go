@@ -355,7 +355,7 @@ func (h *handler) generateAndPersistTokens(ctx context.Context, accountID string
 	}
 
 	// Create access token
-	accessToken, accessTokenExpiresAt, err := h.authClient.NewAccessToken(auth.AccountManagementClaims{
+	accessToken, accessTokenExpiresAt, err := h.authClient.NewAccessToken(auth.Claims{
 		AccountID: accountID,
 	})
 	if err != nil {

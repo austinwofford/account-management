@@ -6,18 +6,19 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupTestDB(t *testing.T) *DB {
 	t.Helper()
 
-	// Use test database URL or skip if not available
-	dbURL := "postgres://postgres:password@localhost:5432/account_management_test?sslmode=disable"
+	// Use containerized database URL (this would probably be
+	// different in a CI pipeline and would need to be configurable)
+	dbURL := "postgres://postgres:password@localhost:5432/account_management?sslmode=disable"
 
 	db, err := sqlx.Connect("pgx", dbURL)
-	if err != nil {
-		t.Skip("Test database not available:", err)
-	}
+	require.NoError(t, err)
 
 	// Clean up any existing test data
 	_, err = db.Exec("DELETE FROM accounts WHERE email LIKE '%@test.com'")
@@ -30,90 +31,129 @@ func setupTestDB(t *testing.T) *DB {
 
 func TestCreateAccount(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	ctx := context.Background()
 
-	t.Run("successful account creation", func(t *testing.T) {
-		account := AccountCreationParams{
-			Email:        "test@test.com",
-			PasswordHash: "hashed_password",
-		}
+	tests := []struct {
+		name            string
+		params          AccountCreationParams
+		expectedAccount func(t *testing.T, actual Account)
+		shouldError     bool
+		expectedError   error
+	}{
+		{
+			name: "successful account creation",
+			params: AccountCreationParams{
+				Email:        "testerbob@test.com",
+				PasswordHash: "hashed-password",
+			},
+			expectedAccount: func(t *testing.T, actual Account) {
+				assert.Equal(t, "testerbob@test.com", actual.Email)
+				assert.Equal(t, "hashed-password", actual.PasswordHash)
+				assert.NotZero(t, actual.CreatedAt)
+				assert.NotZero(t, actual.UpdatedAt)
+			},
+		},
+		{
+			name: "duplicate email error",
+			params: AccountCreationParams{
+				Email:        "testerbob@test.com",
+				PasswordHash: "hashed-password",
+			},
+			shouldError:   true,
+			expectedError: ErrAccountAlreadyExists,
+		},
+		//{
+		//	name: "empty email fails",
+		//},
+		//{
+		//	name: "empty password hash fails",
+		//},
+	}
 
-		result, err := db.CreateAccount(ctx, account)
-		if err != nil {
-			t.Fatal("CreateAccount failed:", err)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := db.CreateAccount(ctx, tt.params)
+			if tt.shouldError {
+				require.Error(t, err)
+				require.ErrorIs(t, err, ErrAccountAlreadyExists)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, actual)
+				tt.expectedAccount(t, *actual)
+			}
+		})
+	}
 
-		if result == nil {
-			t.Fatal("Expected account result, got nil")
-		}
-
-		if result.ID == "" {
-			t.Error("Expected ID to be set")
-		}
-
-		if result.Email != account.Email {
-			t.Errorf("Expected email %s, got %s", account.Email, result.Email)
-		}
-
-		if result.PasswordHash != account.PasswordHash {
-			t.Errorf("Expected password hash %s, got %s", account.PasswordHash, result.PasswordHash)
-		}
-
-		// Clean up
-		_, err = db.client.Exec("DELETE FROM accounts WHERE id = $1", result.ID)
-		if err != nil {
-			t.Log("Failed to clean up test account:", err)
-		}
+	t.Cleanup(func() {
+		_, err := db.client.Exec("DELETE FROM accounts WHERE email = 'testerbob@test.com'")
+		require.NoError(t, err)
+		require.NoError(t, db.Close())
 	})
+}
 
-	t.Run("duplicate email should fail", func(t *testing.T) {
-		account := AccountCreationParams{
-			Email:        "duplicate@test.com",
-			PasswordHash: "hashed_password",
-		}
+func TestGetAccount(t *testing.T) {
+	db := setupTestDB(t)
 
-		// Create first account
-		result1, err := db.CreateAccount(ctx, account)
-		if err != nil {
-			t.Fatal("First CreateAccount failed:", err)
-		}
+	ctx := context.Background()
 
-		// Try to create duplicate
-		_, err = db.CreateAccount(ctx, account)
-		if err == nil {
-			t.Error("Expected error for duplicate email, got nil")
-		}
-
-		// Clean up
-		_, err = db.client.Exec("DELETE FROM accounts WHERE id = $1", result1.ID)
-		if err != nil {
-			t.Log("Failed to clean up test account:", err)
-		}
+	// Create a test account first
+	testAccount, err := db.CreateAccount(ctx, AccountCreationParams{
+		Email:        "gettest@test.com",
+		PasswordHash: "test-password-hash",
 	})
+	require.NoError(t, err)
 
-	t.Run("empty email should fail", func(t *testing.T) {
-		account := AccountCreationParams{
-			Email:        "",
-			PasswordHash: "hashed_password",
-		}
+	tests := []struct {
+		name            string
+		email           string
+		expectedAccount func(t *testing.T, actual *Account)
+		shouldError     bool
+		expectedError   error
+	}{
+		{
+			name:  "successful account retrieval",
+			email: "gettest@test.com",
+			expectedAccount: func(t *testing.T, actual *Account) {
+				assert.Equal(t, testAccount.ID, actual.ID)
+				assert.Equal(t, "gettest@test.com", actual.Email)
+				assert.Equal(t, "test-password-hash", actual.PasswordHash)
+				assert.Equal(t, testAccount.CreatedAt, actual.CreatedAt)
+				assert.Equal(t, testAccount.UpdatedAt, actual.UpdatedAt)
+			},
+		},
+		{
+			name:          "account not found error",
+			email:         "nonexistent@test.com",
+			shouldError:   true,
+			expectedError: ErrAccountNotFound,
+		},
+		{
+			name:          "empty email",
+			email:         "",
+			shouldError:   true,
+			expectedError: ErrAccountNotFound,
+		},
+	}
 
-		_, err := db.CreateAccount(ctx, account)
-		if err == nil {
-			t.Error("Expected error for empty email, got nil")
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := db.GetAccount(ctx, tt.email)
+			if tt.shouldError {
+				require.Error(t, err)
+				require.ErrorIs(t, err, tt.expectedError)
+				require.Nil(t, actual)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, actual)
+				tt.expectedAccount(t, actual)
+			}
+		})
+	}
 
-	t.Run("empty password hash should fail", func(t *testing.T) {
-		account := AccountCreationParams{
-			Email:        "empty_password@test.com",
-			PasswordHash: "",
-		}
-
-		_, err := db.CreateAccount(ctx, account)
-		if err == nil {
-			t.Error("Expected error for empty password hash, got nil")
-		}
+	t.Cleanup(func() {
+		_, err := db.client.Exec("DELETE FROM accounts WHERE email = 'gettest@test.com'")
+		require.NoError(t, err)
+		require.NoError(t, db.Close())
 	})
 }

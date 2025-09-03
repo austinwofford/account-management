@@ -17,6 +17,7 @@ func slogMiddleware() func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 			slog.Info("http_request",
 				slog.String("http_method", r.Method),
+				slog.String("path", r.URL.Path),
 				slog.Int("status_code", ww.code),
 				slog.Duration("duration", time.Since(start)),
 				slog.String("remote_addr", r.RemoteAddr),

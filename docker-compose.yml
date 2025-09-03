@@ -23,7 +23,6 @@ services:
     restart: on-failure
     networks:
       - app-network
-    # Don't expose ports - only accessible via Caddy
 
   caddy:
     image: caddy:2-alpine

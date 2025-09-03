@@ -1,0 +1,298 @@
+openapi: 3.0.3
+info:
+  title: Account Management API
+  description: | 
+    # Authentication service for account management 
+    ### Docs for Humans
+    **There are currently 4 important endpoints:**
+    - POST /v1/accounts/register
+      - Takes email and password to create an account record. Returns the account's ID.
+    - POST /v1/accounts/login
+      - Takes email and password in exchange for an access token (JWT) and a refresh token.
+        The access tokens last a short time (~15 minutes) and the refresh tokens last a long time (24 hours).
+        The refresh token is for getting fresh access tokens.
+    - POST /v1/accounts/refresh
+      - Accepts a refresh token in exchange for new access and refresh tokens. 
+        If the refresh token is expired, you get a 401 and will need to login again.
+    - POST /v1/accounts/logout
+      - Accepts a refresh token and, practically speaking, deletes it from the database so your
+        account cannot continue getting fresh access tokens without a new login.
+
+  version: 1.0.0
+  contact:
+    name: Austin Wofford
+    email: wofford.austin@live.com
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /v1/accounts/register:
+    post:
+      summary: Register a new account
+      description: Creates a new user account with email and password
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User's email address
+                  example: user@example.com
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 72
+                  description: User's password (must contain uppercase, lowercase, digit, and special character)
+                  example: Password123!
+      responses:
+        '201':
+          description: Account created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Account created successfully
+                  account_id:
+                    type: string
+                    format: uuid
+                    example: 123e4567-e89b-12d3-a456-426614174000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Account already exists
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - type: object
+                    properties:
+                      type:
+                        example: account_already_exists
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - type: object
+                    properties:
+                      type:
+                        example: validation_error
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/accounts/login:
+    post:
+      summary: Login to account
+      description: Authenticates user and returns access and refresh tokens
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User's email address
+                  example: user@example.com
+                password:
+                  type: string
+                  description: User's password
+                  example: Password123!
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - type: object
+                    properties:
+                      type:
+                        enum:
+                          - account_not_found
+                          - incorrect_password
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/accounts/refresh:
+    post:
+      summary: Refresh access token
+      description: Uses refresh token to generate new access and refresh tokens
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+                  description: Valid refresh token
+                  example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - type: object
+                    properties:
+                      type:
+                        example: invalid_refresh_token
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/accounts/logout:
+    post:
+      summary: Logout from account
+      description: Revokes refresh token and ends user session
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+                  description: User's refresh token to revoke
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logged out successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    TokenResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Success
+        account_id:
+          type: string
+          format: uuid
+          description: User's account ID
+          example: 123e4567-e89b-12d3-a456-426614174000
+        access_token:
+          type: string
+          description: JWT access token
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        refresh_token:
+          type: string
+          description: Refresh token for generating new access tokens
+          example: 123e4567-e89b-12d3-a456-426614174000
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          description: Access token expiration time in seconds
+          example: 900
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Human-readable error message
+        type:
+          type: string
+          description: Machine-readable error type
+        status_code:
+          type: integer
+          description: HTTP status code
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid request body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: error reading request body
+            status_code: 400
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: There was an unexpected error
+            status_code: 500
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token for authenticated requests
+
+tags:
+  - name: Authentication
+    description: Account authentication and session management
