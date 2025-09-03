@@ -24,12 +24,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	h := webserver.NewRouter(*cfg, logger)
-	srv := webserver.NewHTTPServer(cfg.HTTPAddress, h)
+	router := webserver.NewRouter(*cfg, logger)
+	srv := webserver.NewHTTPServer(cfg.HTTPAddress, router)
 
-	// start the webserver in a goroutine
+	// err chan for server errors
 	errCh := make(chan error, 1)
 
+	// start the webserver in a go routine and listen for errors
 	go func() {
 		logger.Info("starting webserver", "addr", cfg.HTTPAddress)
 		errCh <- srv.ListenAndServe()
@@ -38,8 +39,10 @@ func main() {
 	// wait for signal or fatal listen error
 	select {
 	case sig := <-trap():
-		logger.Info("shutdown signal", "signal", sig)
+		// if we get a shutdown signal, all is good, let's gracefully shutdown
+		logger.Info("shutdown signal received", "signal", sig)
 	case err := <-errCh:
+		// if we get an error from the Listen and Serve, log it and exit
 		if err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "err", err)
 			os.Exit(1)
@@ -57,6 +60,8 @@ func main() {
 	}
 }
 
+// trap returns a channel that receives OS shutdown signals
+// so that we may gracefully shutdown
 func trap() <-chan os.Signal {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)

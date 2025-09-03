@@ -4,6 +4,21 @@ run:
   timeout: 5m
   go: "1.25"
 
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+  settings:
+  exclusions:
+    presets:
+      - std-error-handling
+      - comments
+      - common-false-positives
+
 linters-settings:
   govet:
     enable-all: true
@@ -25,15 +40,3 @@ linters-settings:
   
   goimports:
     local-prefixes: github.com/austinwofford/account-management
-
-linters:
-  enable:
-    - wsl_v5
-  settings:
-    wsl_v5:
-      allow-first-in-block: true
-      allow-whole-block: false
-      branch-max-lines: 2
-  exclusions:
-    presets:
-      - std-error-handling

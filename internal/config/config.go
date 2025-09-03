@@ -10,7 +10,6 @@ import (
 
 type Config struct {
 	HTTPAddress            string `env:"HTTP_ADDRESS" envDefault:":8080"`
-	CORSEnabled            bool   `env:"CORS_ENABLED" envDefault:"true"`
 	DebugEnabled           bool   `env:"DEBUG_ENABLED"`
 	PostgresURL            string `env:"PSQL_URL,required"`
 	AccessTokenTTLMinutes  int    `env:"REFRESH_TOKEN_TTL_MINUTES" envDefault:"15"`

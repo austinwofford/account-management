@@ -13,15 +13,15 @@ import (
 	"github.com/austinwofford/account-management/internal/webserver/accounts"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/cors"
 )
 
 func NewHTTPServer(addr string, h http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           h,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 }
@@ -30,23 +30,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
-	//r.Use(middleware.RealIP)
+	r.Use(slogMiddleware())
+	//TODO: Maybe use chi's logging middleware instead of mine?
+	//r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	// TODO: Determine if I should use timeouts on the router or on the server
-	r.Use(middleware.Timeout(60 * time.Second))
-	r.Use(slogMiddleware(logger))
-	//r.Use(middleware.Logger) TODO: Maybe use chi's logging middleware?
-
-	if cfg.CORSEnabled {
-		r.Use(cors.Handler(cors.Options{
-			// TODO: only allow the origin(s) we expect
-			AllowedOrigins: []string{"*"},
-			// TODO: Remove unexpected methods
-			AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
-			MaxAge:         300,
-		}))
-	}
 
 	ctx := context.Background()
 
@@ -56,8 +43,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 		os.Exit(1)
 	}
 
-	// u up?
+	// healthcheck
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		err := db.HealthCheck(ctx)
+		if err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 

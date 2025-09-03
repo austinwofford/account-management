@@ -37,3 +37,9 @@ go.work.sum
 # ssl stuff
 *.crt
 *.key
+
+# dev stuff and experiments
+/web
+notes.md
+analysis.md
+spruce.pdf

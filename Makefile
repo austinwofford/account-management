@@ -34,30 +34,14 @@ fmt: ## Format code
 vet: ## Run go vet
 	go vet ./...
 
-# Database
-db-up: ## Start database
-	docker-compose up -d postgres
-
-db-down: ## Stop database
-	docker-compose down
-
-migrate-up: ## Run database migrations up
+migrate-up:
 	migrate -path migrations -database "postgres://postgres:password@localhost:5432/account_management?sslmode=disable" up
 
-migrate-down: ## Run database migrations down
+migrate-down:
 	migrate -path migrations -database "postgres://postgres:password@localhost:5432/account_management?sslmode=disable" down
 
 migrate-create: ## Create a new migration (usage: make migrate-create name=migration_name)
 	migrate create -ext sql -dir migrations $(name)
-
-# Cleanup
-clean: ## Clean build artifacts
-	rm -rf bin/
-	rm -f coverage.out coverage.html
-
-# Development
-dev: db-up ## Start development environment
-	@echo "Database started. Run 'make migrate-up' to apply migrations."
 
 # All quality checks
 check: fmt vet lint test ## Run all code quality checks

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -54,13 +54,14 @@ func (c *Client) NewAccessToken(claims AccountManagementClaims) (string, time.Ti
 
 	myClaims := struct {
 		AccountManagementClaims
-		jwt.StandardClaims
+		jwt.RegisteredClaims
 	}{
 		AccountManagementClaims: claims,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: expiresAt.Unix(),
-			IssuedAt:  now.Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(now),
 			Issuer:    "account-management",
+			ID:        uuid.NewString(),
 		},
 	}
 

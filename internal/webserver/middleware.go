@@ -8,13 +8,14 @@ import (
 	"github.com/go-chi/chi/middleware"
 )
 
-func slogMiddleware(log *slog.Logger) func(http.Handler) http.Handler {
+// slogMiddleware logs http requests using slog
+func slogMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			ww := &wrapWriter{ResponseWriter: w, code: http.StatusOK}
 			next.ServeHTTP(ww, r)
-			log.Info("http_request",
+			slog.Info("http_request",
 				slog.String("http_method", r.Method),
 				slog.Int("status_code", ww.code),
 				slog.Duration("duration", time.Since(start)),

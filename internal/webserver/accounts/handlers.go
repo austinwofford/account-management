@@ -1,6 +1,7 @@
 package accounts
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -13,8 +14,17 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type accountsHandler struct {
-	db         *database.DB
+// Repository defines the DB methods needed by account handlers
+type Repository interface {
+	CreateAccount(ctx context.Context, params database.AccountCreationParams) (*database.Account, error)
+	GetAccount(ctx context.Context, email string) (*database.Account, error)
+	CreateRefreshToken(ctx context.Context, params database.CreateRefreshTokenParams) error
+	GetRefreshToken(ctx context.Context, token string) (*database.RefreshToken, error)
+	DeleteRefreshToken(ctx context.Context, accountID string) error
+}
+
+type handler struct {
+	db         Repository
 	authClient *auth.Client
 
 	http.Handler
@@ -28,7 +38,7 @@ type HandlerDeps struct {
 func NewHandler(deps HandlerDeps) http.Handler {
 	mux := chi.NewMux()
 
-	h := accountsHandler{
+	h := handler{
 		db:         deps.DB,
 		authClient: deps.AuthClient,
 	}
@@ -49,8 +59,10 @@ const (
 	unexpectedAccountCreationErrorMessage = "There was an unexpected error creating the account"
 	unexpectedLoginError                  = "There was an unexpected error logging in"
 
-	errTypeAccountCreation      = "account_creation_error"
 	errTypeAccountAlreadyExists = "account_already_exists"
+	errTypeAccountNotFound      = "account_not_found"
+	errTypeIncorrectPassword    = "incorrect_password"
+	errTypeInvalidRefreshToken  = "invalid_refresh_token"
 	errTypeValidationError      = "validation_error"
 )
 
@@ -64,7 +76,7 @@ type registerResponse struct {
 	AccountID string `json:"account_id"`
 }
 
-func (h *accountsHandler) register(w http.ResponseWriter, r *http.Request) {
+func (h *handler) register(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var reqBody registerRequest
@@ -74,10 +86,8 @@ func (h *accountsHandler) register(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(ctx, "error decoding register request body", "error", err.Error())
 		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
 			Message:    "error reading request body",
-			Type:       errTypeAccountCreation,
 			StatusCode: http.StatusBadRequest,
 		})
-
 		return
 	}
 
@@ -103,8 +113,8 @@ func (h *accountsHandler) register(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.ErrorContext(ctx, "error hashing password", "error", err)
 		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
-			Message: unexpectedAccountCreationErrorMessage,
-			Type:    errTypeAccountCreation,
+			Message:    unexpectedAccountCreationErrorMessage,
+			StatusCode: http.StatusInternalServerError,
 		})
 		return
 	}
@@ -131,10 +141,8 @@ func (h *accountsHandler) register(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(ctx, "error persisting new account to the db", "error", err)
 		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
 			Message:    unexpectedAccountCreationErrorMessage,
-			Type:       errTypeAccountCreation,
 			StatusCode: http.StatusInternalServerError,
 		})
-
 		return
 	}
 	// return user ID
@@ -159,7 +167,7 @@ type loginOrRefreshResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-func (h *accountsHandler) login(w http.ResponseWriter, r *http.Request) {
+func (h *handler) login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var reqBody loginRequest
@@ -171,7 +179,6 @@ func (h *accountsHandler) login(w http.ResponseWriter, r *http.Request) {
 			Message:    "error reading request body",
 			StatusCode: http.StatusBadRequest,
 		})
-
 		return
 	}
 
@@ -181,10 +188,9 @@ func (h *accountsHandler) login(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, database.ErrAccountNotFound) {
 			httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
 				Message:    "No account was found matching this email",
-				Type:       "account_not_found",
+				Type:       errTypeAccountNotFound,
 				StatusCode: http.StatusUnauthorized,
 			})
-
 			return
 		}
 		slog.ErrorContext(ctx, "error getting account for login", "error", err)
@@ -192,70 +198,36 @@ func (h *accountsHandler) login(w http.ResponseWriter, r *http.Request) {
 			Message:    unexpectedLoginError,
 			StatusCode: http.StatusInternalServerError,
 		})
-
 		return
 	}
 
 	if !auth.PasswordIsCorrect(reqBody.Password, account.PasswordHash) {
 		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
 			Message:    "Password is incorrect",
+			Type:       errTypeIncorrectPassword,
 			StatusCode: http.StatusUnauthorized,
 		})
-
 		return
 	}
 
 	// unset the plaintext password
 	reqBody.Password = ""
 
-	// create a refresh token and persist in the db
-	refreshToken, refreshTokenExpiresAt := h.authClient.NewRefreshToken()
-
-	err = h.db.CreateRefreshToken(ctx, database.CreateRefreshTokenParams{
-		Token:     refreshToken,
-		AccountID: account.ID,
-		ExpiresAt: refreshTokenExpiresAt,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "error creating refresh token", "error", err)
-		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
-			Message:    unexpectedLoginError,
-			StatusCode: http.StatusInternalServerError,
-		})
+	// Generate and persist tokens
+	response, errResponse := h.generateAndPersistTokens(ctx, account.ID)
+	if errResponse != nil {
+		httputils.WriteErrorResponse(w, r, *errResponse)
 		return
 	}
 
-	accessToken, accessTokenExpiresAt, err := h.authClient.NewAccessToken(auth.AccountManagementClaims{
-		AccountID: account.ID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "error creating new access token", "error", err)
-		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
-			Message:    "Error creating new access token",
-			StatusCode: http.StatusInternalServerError,
-		})
-
-		return
-	}
-
-	now := time.Now()
-	accessTokenExpiresIn := accessTokenExpiresAt.Sub(now).Seconds()
-
-	httputils.WriteJSONResponse(w, r, http.StatusOK, loginOrRefreshResponse{
-		Message:      "Login successful",
-		AccountID:    account.ID,
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		TokenType:    tokenTypeBearer,
-		ExpiresIn:    int(accessTokenExpiresIn),
-	})
+	httputils.WriteJSONResponse(w, r, http.StatusOK, *response)
 }
 
 type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func (h *accountsHandler) refresh(w http.ResponseWriter, r *http.Request) {
+func (h *handler) refresh(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var reqBody refreshRequest
@@ -267,16 +239,16 @@ func (h *accountsHandler) refresh(w http.ResponseWriter, r *http.Request) {
 			Message:    "error reading request body",
 			StatusCode: http.StatusBadRequest,
 		})
-
 		return
 	}
+
 	// if validation fails, return a 401
 	token, err := h.db.GetRefreshToken(ctx, reqBody.RefreshToken)
 	if err != nil {
 		if errors.Is(err, database.ErrRefreshTokenNotFound) {
 			httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
 				Message:    "Your session has expired",
-				Type:       "refresh_token_expired",
+				Type:       errTypeInvalidRefreshToken,
 				StatusCode: http.StatusUnauthorized,
 			})
 			return
@@ -294,64 +266,27 @@ func (h *accountsHandler) refresh(w http.ResponseWriter, r *http.Request) {
 	if token.ExpiresAt.Before(time.Now()) {
 		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
 			Message:    "Your session has expired",
-			Type:       "refresh_token_expired",
+			Type:       errTypeInvalidRefreshToken,
 			StatusCode: http.StatusUnauthorized,
 		})
 		return
 	}
 
-	// TODO: DRY up the below code. Should probably put in its own method or package.
-	// Likely would be better to get the account from the db after validating the token?
-
-	// if not, refresh the refresh token and return it with a new access token
-	// create a refresh token and persist in the db
-	refreshToken, refreshTokenExpiresAt := h.authClient.NewRefreshToken()
-
-	err = h.db.CreateRefreshToken(ctx, database.CreateRefreshTokenParams{
-		Token:     refreshToken,
-		AccountID: token.AccountID,
-		ExpiresAt: refreshTokenExpiresAt,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "error creating refresh token", "error", err)
-		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
-			Message:    unexpectedLoginError,
-			StatusCode: http.StatusInternalServerError,
-		})
+	// Generate and persist new tokens
+	response, errResponse := h.generateAndPersistTokens(ctx, token.AccountID)
+	if errResponse != nil {
+		httputils.WriteErrorResponse(w, r, *errResponse)
 		return
 	}
 
-	accessToken, accessTokenExpiresAt, err := h.authClient.NewAccessToken(auth.AccountManagementClaims{
-		AccountID: token.AccountID,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "error creating new access token", "error", err)
-		httputils.WriteErrorResponse(w, r, httputils.ErrorResponse{
-			Message:    "Error creating new access token",
-			StatusCode: http.StatusInternalServerError,
-		})
-
-		return
-	}
-
-	now := time.Now()
-	accessTokenExpiresIn := accessTokenExpiresAt.Sub(now).Seconds()
-
-	httputils.WriteJSONResponse(w, r, http.StatusOK, loginOrRefreshResponse{
-		Message:      "Login successful",
-		AccountID:    token.AccountID,
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		TokenType:    tokenTypeBearer,
-		ExpiresIn:    int(accessTokenExpiresIn),
-	})
+	httputils.WriteJSONResponse(w, r, http.StatusOK, *response)
 }
 
 type logoutRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func (h *accountsHandler) logout(w http.ResponseWriter, r *http.Request) {
+func (h *handler) logout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var reqBody logoutRequest
@@ -385,6 +320,7 @@ func (h *accountsHandler) logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete the refresh token to revoke the session
+	// (prevents using the refresh token to get a new access token without another login)
 	err = h.db.DeleteRefreshToken(ctx, token.AccountID)
 	if err != nil {
 		slog.ErrorContext(ctx, "error deleting refresh token", "error", err)
@@ -398,4 +334,47 @@ func (h *accountsHandler) logout(w http.ResponseWriter, r *http.Request) {
 	httputils.WriteJSONResponse(w, r, http.StatusOK, map[string]string{
 		"message": "Logged out successfully",
 	})
+}
+
+// generateAndPersistTokens creates new access and refresh tokens for the given account
+func (h *handler) generateAndPersistTokens(ctx context.Context, accountID string) (*loginOrRefreshResponse, *httputils.ErrorResponse) {
+	// Create a refresh token and persist in the db
+	refreshToken, refreshTokenExpiresAt := h.authClient.NewRefreshToken()
+
+	err := h.db.CreateRefreshToken(ctx, database.CreateRefreshTokenParams{
+		Token:     refreshToken,
+		AccountID: accountID,
+		ExpiresAt: refreshTokenExpiresAt,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "error creating refresh token", "error", err)
+		return nil, &httputils.ErrorResponse{
+			Message:    "Error creating new token",
+			StatusCode: http.StatusInternalServerError,
+		}
+	}
+
+	// Create access token
+	accessToken, accessTokenExpiresAt, err := h.authClient.NewAccessToken(auth.AccountManagementClaims{
+		AccountID: accountID,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "error creating new access token", "error", err)
+		return nil, &httputils.ErrorResponse{
+			Message:    "Error creating new token",
+			StatusCode: http.StatusInternalServerError,
+		}
+	}
+
+	now := time.Now()
+	accessTokenExpiresIn := accessTokenExpiresAt.Sub(now).Seconds()
+
+	return &loginOrRefreshResponse{
+		Message:      "Success",
+		AccountID:    accountID,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		TokenType:    tokenTypeBearer,
+		ExpiresIn:    int(accessTokenExpiresIn),
+	}, nil
 }
