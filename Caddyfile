@@ -1,7 +1,7 @@
 # For local development - adjust domain as needed
 localhost {   
-    # Proxy API calls to the Go service
-    handle_path /api/* {
+    # Proxy calls to the Go service
+    handle /* {
         reverse_proxy account-management:8080
     }
     
