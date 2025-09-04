@@ -1,6 +1,6 @@
 # Account Management Service
 
-A production-ready Go authentication microservice providing JWT-based user account management with PostgreSQL persistence and comprehensive API documentation.
+A production-ready Go web service providing user account management and stateless JWTs for authentication.
 
 ## Features
 
@@ -12,6 +12,29 @@ A production-ready Go authentication microservice providing JWT-based user accou
 - **API Documentation** - API docs with OpenAPI spec and Redoc
 - **Docker Support** - Containerization with PostgreSQL and Caddy
 - **Observability** - Structured logging and container log monitoring via Dozzle
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/accounts/register` | Create new user account |
+| POST | `/v1/accounts/login` | Authenticate and get tokens |
+| POST | `/v1/accounts/refresh` | Refresh access token |
+| POST | `/v1/accounts/logout` | Revoke refresh token |
+
+### Documentation
+
+API documentation is available at:
+- **Local Development**: http://localhost:8080/docs/api
+- **Docker**: http://localhost/docs/api
+
+### Authentication Flow
+
+1. **Register** - Create account with email/password
+2. **Login** - Get access token (15min) + refresh token (24hr)  
+3. **Use Access Token** - Include `Authorization: Bearer <token>` in requests
+4. **Refresh** - Use refresh token to get new access token when expired
+5. **Logout** - Revoke refresh token to end session
 
 ## Project Structure
 
@@ -173,41 +196,6 @@ open coverage.html
 # Run tests for specific package
 go test ./internal/service/auth -v
 ```
-
-### API Documentation
-
-Interactive API documentation is available at:
-- **Local Development**: http://localhost:8080/docs/api
-- **Docker**: http://localhost/docs/api
-
-The documentation is auto-generated from the OpenAPI 3.0 specification in `docs/api/api.yml`.
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/v1/accounts/register` | Create new user account |
-| POST | `/v1/accounts/login` | Authenticate and get tokens |
-| POST | `/v1/accounts/refresh` | Refresh access token |
-| POST | `/v1/accounts/logout` | Revoke refresh token |
-
-### Authentication Flow
-
-1. **Register** - Create account with email/password
-2. **Login** - Get access token (15min) + refresh token (24hr)  
-3. **Use Access Token** - Include `Authorization: Bearer <token>` in requests
-4. **Refresh** - Use refresh token to get new access token when expired
-5. **Logout** - Revoke refresh token to end session
-
-## Security Features
-
-- **Password Requirements**: Minimum 8 characters with uppercase, lowercase, digit, and special character
-- **bcrypt Hashing**: Industry-standard password hashing with salt
-- **JWT Security**: Short-lived access tokens with secure signing
-- **Token Rotation**: Refresh tokens are rotated on each use
-- **Session Revocation**: Logout immediately invalidates refresh tokens
-- **Input Validation**: Comprehensive email and password validation
-- **SQL Injection Protection**: Parameterized queries throughout
 
 ## Environment Configuration
 
