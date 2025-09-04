@@ -1,16 +1,9 @@
 # For local development - adjust domain as needed
-localhost {
-    # Serve static files for the web UI
-    root * /srv/web
-    file_server
-    
+localhost {   
     # Proxy API calls to the Go service
     handle_path /api/* {
         reverse_proxy account-management:8080
     }
-    
-    # Fallback to index.html for SPA routing
-    try_files {path} /index.html
     
     # Add security headers
     header {

@@ -42,7 +42,6 @@ go.work.sum
 *.key
 
 # dev stuff and experiments
-/web
 notes.md
 analysis.md
 spruce.pdf
