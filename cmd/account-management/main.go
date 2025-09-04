@@ -24,7 +24,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	router := webserver.NewRouter(*cfg, logger)
+	ctx := context.Background()
+
+	router, err := webserver.NewRouter(*cfg, logger)
+	if err != nil {
+		logger.ErrorContext(ctx, "fatal error creating database client", "error", err)
+		os.Exit(1)
+	}
+
 	srv := webserver.NewHTTPServer(cfg.HTTPAddress, router)
 
 	// err chan for server errors
@@ -32,7 +39,7 @@ func main() {
 
 	// start the webserver in a go routine and listen for errors
 	go func() {
-		logger.Info("starting webserver", "addr", cfg.HTTPAddress)
+		logger.InfoContext(ctx, "starting webserver", "addr", cfg.HTTPAddress)
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -40,7 +47,7 @@ func main() {
 	select {
 	case sig := <-trap():
 		// if we get a shutdown signal, all is good, let's gracefully shutdown
-		logger.Info("shutdown signal received", "signal", sig)
+		logger.InfoContext(ctx, "shutdown signal received", "signal", sig)
 	case err := <-errCh:
 		// if we get an error from the Listen and Serve, log it and exit
 		if err != nil && err != http.ErrServerClosed {
@@ -50,7 +57,7 @@ func main() {
 	}
 
 	// graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {

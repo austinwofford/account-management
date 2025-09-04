@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/austinwofford/account-management/docs"
@@ -27,7 +26,7 @@ func NewHTTPServer(addr string, h http.Handler) *http.Server {
 	}
 }
 
-func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -40,8 +39,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 
 	db, err := database.NewDB(cfg.PostgresURL)
 	if err != nil {
-		logger.ErrorContext(ctx, "fatal error creating database client", "error", err)
-		os.Exit(1)
+		return nil, err
 	}
 
 	// healthcheck
@@ -65,5 +63,5 @@ func NewRouter(cfg config.Config, logger *slog.Logger) http.Handler {
 		}),
 	}))
 
-	return r
+	return r, nil
 }
