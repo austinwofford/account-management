@@ -6,12 +6,11 @@ A production-ready Go authentication microservice providing JWT-based user accou
 
 - **User Registration & Authentication** - Secure account creation with email validation and strong password requirements
 - **JWT Access Tokens** - Short-lived JWT tokens (15 minutes) for secure API access
-- **Refresh Token Management** - Long-lived refresh tokens (24 hours) with automatic rotation
+- **Refresh Token Management** - Long-lived refresh tokens (24 hours) for getting fresh JWTs
 - **Session Management** - Secure logout with token revocation
 - **Password Security** - bcrypt hashing with complexity requirements (uppercase, lowercase, digit, special character)
-- **Comprehensive Testing** - Unit tests with >90% coverage using testify
 - **API Documentation** - API docs with OpenAPI spec and Redoc
-- **Docker Support** - Complete containerization with PostgreSQL and Caddy reverse proxy
+- **Docker Support** - Containerization with PostgreSQL and Caddy
 - **Observability** - Structured logging and container log monitoring via Dozzle
 
 ## Project Structure
@@ -57,7 +56,7 @@ account-management/
 ├── Makefile
 ```
 
-## 🚀 Quick Start
+## Run It
 
 ### Prerequisites
 
@@ -102,6 +101,30 @@ account-management/
    go run ./cmd/account-management
    ```
 
+### Local Development with VS Code
+1. Setup a `.vscode/launch.json` and add the following:
+   ```
+   {
+      "version": "0.2.0",
+      "configurations": [
+
+         {
+               "name": "Launch Package",
+               "type": "go",
+               "request": "launch",
+               "mode": "auto",
+               "program": "${cwd}/cmd/account-management/main.go",
+               "cwd": "${cwd}",
+               "envFile": "${cwd}/.env",
+               "env": {
+                  "USE_DOTENV": "true"
+               }
+         }
+      ]
+   }
+   ```
+2. Run in debug mode with `F5`
+
 ### Docker Deployment
 
 Run the complete stack with PostgreSQL, application, and Caddy reverse proxy:
@@ -117,7 +140,7 @@ This starts:
 - **Caddy** reverse proxy on ports 80/443
 - **Dozzle** log viewer on port 9999
 
-## 🔧 Development
+## Development
 
 ### Available Make Commands
 
@@ -154,8 +177,8 @@ go test ./internal/service/auth -v
 ### API Documentation
 
 Interactive API documentation is available at:
-- **Local Development**: http://localhost:8080/docs/
-- **Docker**: http://localhost/api/docs/
+- **Local Development**: http://localhost:8080/docs/api
+- **Docker**: http://localhost/docs/api
 
 The documentation is auto-generated from the OpenAPI 3.0 specification in `docs/api/api.yml`.
 
@@ -194,7 +217,7 @@ POSTGRES_URL=postgres://user:pass@localhost:5432/dbname?sslmode=disable
 
 JWT_SECRET_KEY=your-super-secret-jwt-key-here
 
-# Optional but set with these defaults via config.go
+# Optional, but set with these defaults via config.go
 ACCESS_TOKEN_TTL_MINUTES=15
 REFRESH_TOKEN_TTL_MINUTES=1440
 
@@ -203,14 +226,8 @@ HTTP_ADDRESS=:8080
 
 ## Monitoring & Observability
 
-- **Structured Logging**: JSON logs with correlation IDs
+- **Structured Logging**: JSON logs with request IDs (needs more!)
 - **Health Checks**: Database connectivity monitoring at `/health`
-- **Container Logs**: Dozzle web interface at http://localhost:9999 (but maybe Loki later?)
+- **Container Logs**: Dozzle at http://localhost:9999 (but maybe Loki later?)
 - **Test Coverage**: HTML reports generated via `make test-coverage`
-- **Metrics**: Coming soon! (Probably prometheus)
-
-## Author
-
-**Austin Wofford**
-- Email: wofford.austin@live.com
-- GitHub: [@austinwofford](https://github.com/austinwofford)
+- **Metrics**: Coming soon! (Probably Prometheus + Grafana)
